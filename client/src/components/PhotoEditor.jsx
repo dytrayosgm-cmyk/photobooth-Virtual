@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Download, RotateCcw, Sparkles, Trash2, Type, Wand2 } from "lucide-react";
+import { ArrowLeft, Check, Download, Palette, RotateCcw, Sparkles, Trash2, Type, Wand2 } from "lucide-react";
 
 const filters = [
   ["normal", "Normal"],
@@ -7,34 +7,52 @@ const filters = [
   ["warm", "Warm Gold"],
   ["sepia", "Vintage Sepia"],
   ["golden", "Golden Hour"],
-  ["pastel", "Cyber Fade"],
+  ["pastel", "Pastel Soft"],
   ["noir", "Obsidian Noir"]
 ];
 
 const templates = [
-  ["digicam", "Digicam 2000"],
-  ["cyber", "Y2K Cyber"],
-  ["minimal", "Studio Noir"],
-  ["film", "35mm Negative"]
+  { id: "coquette", label: "🎀 Coquette Ribbon", desc: "Pita manis & nuansa soft girlie" },
+  { id: "one-fine-day", label: "✨ One Fine Day", desc: "K-Pop idol strip ala Blok M" },
+  { id: "scrapbook", label: "💌 Washi Scrapbook", desc: "Selotip washi tape & cap couple" },
+  { id: "search-ui", label: "🔍 Cute Browser", desc: "Window search ala Lemon8 viral" },
+  { id: "digicam", label: "📸 Digicam 2000s", desc: "Kamera saku LCD & date stamp" },
+  { id: "minimal", label: "🎞️ Studio Barcode", desc: "Clean Life Four Cuts Korea" }
 ];
 
-const stickers = ["✨", "⭐", "🎀", "🖤", "💿", "⚡", "📸", "♡", "👾", "🛸", "🔥", "🎞️"];
+const colorPalettes = [
+  { id: "auto", label: "Auto", color: "transparent" },
+  { id: "#ffe4e6", label: "Strawberry", color: "#ffe4e6" },
+  { id: "#e0f2fe", label: "Baby Sky", color: "#e0f2fe" },
+  { id: "#fef08a", label: "Buttercream", color: "#fef08a" },
+  { id: "#f3e8ff", label: "Lilac", color: "#f3e8ff" },
+  { id: "#dcfce7", label: "Matcha", color: "#dcfce7" },
+  { id: "#ffffff", label: "Pure White", color: "#ffffff" },
+  { id: "#18181b", label: "Noir Dark", color: "#18181b" }
+];
+
+const stickers = [
+  "🎀", "🧸", "🌸", "🐾", "🍓", "🍰", "💌", "🍒", "💖", "🐰",
+  "⭐", "✨", "🪞", "🧷", "🌷", "🧁", "🐈", "🫧", "🤍", "💐",
+  "💍", "🫶", "💿", "⚡", "📸", "👾"
+];
 
 const filterCss = {
   normal: "none",
-  bw: "grayscale(1) contrast(1.3)",
+  bw: "grayscale(1) contrast(1.25)",
   warm: "sepia(.3) saturate(1.25) contrast(1.05)",
-  sepia: "sepia(.7) contrast(1.1)",
-  golden: "sepia(.35) saturate(1.5) brightness(1.08)",
-  pastel: "saturate(.8) brightness(1.1) contrast(.9) hue-rotate(15deg)",
-  noir: "grayscale(1) contrast(1.8) brightness(.8)"
+  sepia: "sepia(.65) contrast(1.1)",
+  golden: "sepia(.32) saturate(1.45) brightness(1.08)",
+  pastel: "saturate(.85) brightness(1.1) contrast(.92) hue-rotate(10deg)",
+  noir: "grayscale(1) contrast(1.75) brightness(.82)"
 };
 
 export default function PhotoEditor({ photos, socket, onBack }) {
   const canvasRef = useRef(null);
   const [filter, setFilter] = useState("normal");
-  const [template, setTemplate] = useState("digicam");
-  const [customTitle, setCustomTitle] = useState("TWINCAM ARCHIVE");
+  const [template, setTemplate] = useState("coquette");
+  const [customColor, setCustomColor] = useState("auto");
+  const [customTitle, setCustomTitle] = useState("OUR SWEET MOMENTS");
   const [customDate, setCustomDate] = useState(() => {
     const d = new Date();
     return `'${String(d.getFullYear()).slice(-2)}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
@@ -50,11 +68,13 @@ export default function PhotoEditor({ photos, socket, onBack }) {
     setRendered(false);
 
     const ctx = canvas.getContext("2d");
-    const padding = template === "digicam" ? 32 : template === "film" ? 36 : 28;
-    const gap = 16;
+    const isCuteTheme = ["coquette", "one-fine-day", "scrapbook", "search-ui"].includes(template);
+    const padding = template === "digicam" ? 32 : isCuteTheme ? 34 : 28;
+    const gap = isCuteTheme ? 20 : 16;
     const photoWidth = 500;
     const photoHeight = 560;
-    const footerHeight = 140;
+    const headerHeight = template === "search-ui" ? 54 : template === "one-fine-day" ? 70 : 0;
+    const footerHeight = template === "scrapbook" ? 170 : 140;
 
     const grid = photos.some((photo) => photo?.layout === "grid");
     const count = Math.max(photos.length, 1);
@@ -62,27 +82,73 @@ export default function PhotoEditor({ photos, socket, onBack }) {
     const rows = grid ? Math.ceil(count / 2) : count;
 
     canvas.width = padding * 2 + columns * photoWidth + (columns - 1) * gap;
-    canvas.height = padding * 2 + rows * photoHeight + (rows - 1) * gap + footerHeight;
+    canvas.height = padding * 2 + rows * photoHeight + (rows - 1) * gap + headerHeight + footerHeight;
 
-    // Background style based on template
-    if (template === "digicam") {
-      ctx.fillStyle = "#121620";
-    } else if (template === "cyber") {
-      const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-      grad.addColorStop(0, "#1c142b");
-      grad.addColorStop(1, "#101628");
-      ctx.fillStyle = grad;
-    } else if (template === "film") {
-      ctx.fillStyle = "#0d0f12";
+    // 1. Tentukan Background Warna
+    let bgFill = "#ffffff";
+    if (customColor !== "auto") {
+      bgFill = customColor;
     } else {
-      ctx.fillStyle = "#09090b"; // minimal noir
+      if (template === "coquette") bgFill = "#fdf2f4"; // soft baby pink
+      else if (template === "one-fine-day") bgFill = "#1e295d"; // deep navy K-Pop
+      else if (template === "scrapbook") bgFill = "#faf7f2"; // vintage soft butter paper
+      else if (template === "search-ui") bgFill = "#f0f4f8"; // clean pastel desktop
+      else if (template === "digicam") bgFill = "#121620"; // dark titanium
+      else bgFill = "#09090b"; // minimal noir
     }
+    ctx.fillStyle = bgFill;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Subtle outer border
-    ctx.strokeStyle = template === "cyber" ? "#f43f5e" : "#2a3449";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
+    const isDarkBg = bgFill === "#18181b" || bgFill === "#121620" || bgFill === "#09090b" || bgFill === "#1e295d";
+
+    // 2. Render Template Header Khusus
+    if (template === "search-ui") {
+      // Cute Browser Window Header
+      const winX = padding;
+      const winY = padding;
+      const winW = canvas.width - padding * 2;
+      ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
+      ctx.beginPath();
+      ctx.roundRect(winX, winY, winW, 38, 8);
+      ctx.fill();
+
+      // Window dots
+      const dots = ["#f87171", "#fbbf24", "#4ade80"];
+      dots.forEach((dotColor, idx) => {
+        ctx.fillStyle = dotColor;
+        ctx.beginPath();
+        ctx.arc(winX + 18 + idx * 14, winY + 19, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // Search field
+      const searchBoxX = winX + 75;
+      const searchBoxW = winW - 90;
+      ctx.fillStyle = "#f1f5f9";
+      ctx.beginPath();
+      ctx.roundRect(searchBoxX, winY + 7, searchBoxW, 24, 12);
+      ctx.fill();
+
+      ctx.fillStyle = "#64748b";
+      ctx.font = "12px sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText("🔍 google.com/search?q=my+favorite+person♡", searchBoxX + 14, winY + 23);
+    } else if (template === "one-fine-day") {
+      // Arched K-Pop Header
+      ctx.textAlign = "center";
+      ctx.fillStyle = isDarkBg ? "#f43f5e" : "#e11d48";
+      ctx.font = "italic bold 32px 'Space Grotesk', sans-serif";
+      ctx.fillText("★ One Fine Day ★", canvas.width / 2, padding + 40);
+
+      ctx.font = "11px sans-serif";
+      ctx.fillStyle = isDarkBg ? "#94a3b8" : "#64748b";
+      ctx.fillText("MEMORIES TO CHERISH FOREVER", canvas.width / 2, padding + 58);
+    } else if (template === "coquette") {
+      // Coquette decorative top lace
+      ctx.textAlign = "center";
+      ctx.font = "18px sans-serif";
+      ctx.fillText("🎀 ♡ 🎀", canvas.width / 2, padding + 10);
+    }
 
     const loadImage = (source) =>
       new Promise((resolve) => {
@@ -110,6 +176,19 @@ export default function PhotoEditor({ photos, socket, onBack }) {
       );
     };
 
+    // Helper: Washi Tape Drawing
+    const drawWashiTape = (tapeX, tapeY, width, height, angle, tapeColor) => {
+      ctx.save();
+      ctx.translate(tapeX, tapeY);
+      ctx.rotate(angle);
+      ctx.fillStyle = tapeColor;
+      ctx.fillRect(-width / 2, -height / 2, width, height);
+      // Highlights
+      ctx.fillStyle = "rgba(255, 255, 255, 0.28)";
+      ctx.fillRect(-width / 2, -height / 2, width, 3);
+      ctx.restore();
+    };
+
     Promise.all(
       photos.map(async (photo, index) => {
         const [host, guest] = await Promise.all([
@@ -119,77 +198,163 @@ export default function PhotoEditor({ photos, socket, onBack }) {
         if (!active) return;
 
         const x = padding + (grid ? index % 2 : 0) * (photoWidth + gap);
-        const y = padding + (grid ? Math.floor(index / 2) : index) * (photoHeight + gap);
+        const y = padding + headerHeight + (grid ? Math.floor(index / 2) : index) * (photoHeight + gap);
 
-        // Frame slot background
-        ctx.fillStyle = "#05070a";
-        ctx.fillRect(x, y, photoWidth, photoHeight);
+        // Frame slot border/background
+        ctx.fillStyle = "#ffffff";
+        if (template === "search-ui") {
+          // Alternating colorful borders ala Lemon8
+          const frameBorders = ["#f87171", "#60a5fa", "#facc15", "#34d399"];
+          ctx.strokeStyle = frameBorders[index % frameBorders.length];
+          ctx.lineWidth = 6;
+          ctx.strokeRect(x - 3, y - 3, photoWidth + 6, photoHeight + 6);
+        } else if (template === "coquette") {
+          // Soft dashed cute border
+          ctx.strokeStyle = "rgba(244, 63, 94, 0.4)";
+          ctx.lineWidth = 2;
+          ctx.setLineDash([6, 4]);
+          ctx.strokeRect(x - 5, y - 5, photoWidth + 10, photoHeight + 10);
+          ctx.setLineDash([]);
+        } else if (template === "scrapbook") {
+          // Soft polaroid white border shadow
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(x - 6, y - 6, photoWidth + 12, photoHeight + 12);
+        }
 
         // Draw photos (Dual or Solo)
         ctx.save();
         ctx.filter = filterCss[filter] || "none";
 
         if (host && guest) {
-          // Dual mode: Top half host, bottom half guest
           const panelHeight = photoHeight / 2;
           drawCover(host, x, y, photoWidth, panelHeight);
           drawCover(guest, x, y + panelHeight, photoWidth, panelHeight);
 
-          // Divider between duo photos
           ctx.restore();
-          ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
           ctx.lineWidth = 1;
           ctx.beginPath();
           ctx.moveTo(x, y + panelHeight);
           ctx.lineTo(x + photoWidth, y + panelHeight);
           ctx.stroke();
         } else {
-          // Solo mode: Single photo occupies whole slot
           const single = host || guest;
           if (single) drawCover(single, x, y, photoWidth, photoHeight);
           ctx.restore();
         }
 
-        // Template overlays per slot
-        if (template === "digicam") {
+        // Template Slot Ornaments
+        if (template === "scrapbook") {
+          // Real Masking / Washi Tape on corners!
+          const tapeColors = [
+            "rgba(251, 146, 60, 0.75)",
+            "rgba(244, 114, 182, 0.75)",
+            "rgba(56, 189, 248, 0.75)",
+            "rgba(163, 230, 53, 0.75)"
+          ];
+          const tapeCol = tapeColors[index % tapeColors.length];
+          drawWashiTape(x + 22, y + 6, 54, 18, -0.15, tapeCol);
+          drawWashiTape(x + photoWidth - 22, y + 6, 54, 18, 0.15, tapeCol);
+        } else if (template === "coquette") {
+          // Cute little ribbon bows on photo corners
+          ctx.font = "22px sans-serif";
+          ctx.fillText("🎀", x + 12, y + 22);
+          ctx.fillText("♡", x + photoWidth - 22, y + 22);
+        } else if (template === "digicam") {
           // Orange digital date stamp on bottom right of each photo
-          ctx.fillStyle = "rgba(251, 191, 36, 0.9)";
+          ctx.fillStyle = "rgba(251, 191, 36, 0.95)";
           ctx.font = "bold 16px 'Share Tech Mono', monospace";
           ctx.textAlign = "right";
           ctx.fillText(customDate, x + photoWidth - 14, y + photoHeight - 14);
 
-          // Little corner brackets
-          ctx.strokeStyle = "rgba(255,255,255,0.4)";
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.45)";
           ctx.lineWidth = 1.5;
           ctx.strokeRect(x + 8, y + 8, 12, 12);
-        } else if (template === "film") {
-          // 35mm film perforations
-          ctx.fillStyle = "#ffffff";
-          for (let hole = y + 8; hole < y + photoHeight - 10; hole += 28) {
-            ctx.fillRect(x + 6, hole, 10, 16);
-            ctx.fillRect(x + photoWidth - 16, hole, 10, 16);
-          }
-          ctx.fillStyle = "rgba(245, 158, 11, 0.8)";
-          ctx.font = "12px 'Share Tech Mono', monospace";
-          ctx.textAlign = "left";
-          ctx.fillText(`KODAK 400 • FRAME 0${index + 1}`, x + 24, y + photoHeight - 12);
-        } else if (template === "cyber") {
-          // Cyber neon accent line
-          ctx.strokeStyle = "#06b6d4";
-          ctx.lineWidth = 1.5;
-          ctx.strokeRect(x - 2, y - 2, photoWidth + 4, photoHeight + 4);
         }
       })
     ).then(() => {
       if (!active) return;
 
-      // Footer Typography & Details
       const centerX = canvas.width / 2;
       const footerY = canvas.height - footerHeight;
 
-      if (template === "digicam") {
-        // Digicam HUD bottom bar
+      // 3. Render Footer Berdasarkan Template
+      if (template === "scrapbook") {
+        // Couple Monogram Wreath Badge (seperti di referensi foto!)
+        const badgeY = footerY + 68;
+        const radius = 48;
+
+        // Outer circular rings
+        ctx.strokeStyle = "#854d0e";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(centerX, badgeY, radius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.arc(centerX, badgeY, radius - 5, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Monogram text
         ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = "#713f12";
+        ctx.font = "bold 15px 'Space Grotesk', cursive, sans-serif";
+        ctx.fillText(customTitle, centerX, badgeY - 8);
+
+        ctx.font = "12px 'Share Tech Mono', monospace";
+        ctx.fillText(customDate, centerX, badgeY + 12);
+
+        ctx.font = "11px sans-serif";
+        ctx.fillStyle = "#a16207";
+        ctx.fillText("✿ MEMORIES OF US ✿", centerX, footerY + 140);
+      } else if (template === "coquette") {
+        // Coquette Ribbon Sweet Footer
+        ctx.textAlign = "center";
+        ctx.textBaseline = "alphabetic";
+        ctx.fillStyle = "#e11d48";
+        ctx.font = "bold 26px 'Space Grotesk', sans-serif";
+        ctx.fillText(`♡ ${customTitle.toUpperCase()} ♡`, centerX, footerY + 54);
+
+        ctx.font = "14px 'Share Tech Mono', monospace";
+        ctx.fillStyle = "#fb7185";
+        ctx.fillText(`🎀 ${customDate} • FOREVER & ALWAYS 🎀`, centerX, footerY + 88);
+
+        ctx.font = "11px sans-serif";
+        ctx.fillStyle = "#f43f5e";
+        ctx.fillText("KEEP SWEET MEMORIES ALIVE", centerX, footerY + 114);
+      } else if (template === "one-fine-day") {
+        // One Fine Day Mascot Footer
+        ctx.textAlign = "center";
+        ctx.textBaseline = "alphabetic";
+        ctx.fillStyle = isDarkBg ? "#ffffff" : "#1e293b";
+        ctx.font = "800 24px 'Space Grotesk', sans-serif";
+        ctx.fillText(customTitle.toUpperCase(), centerX, footerY + 48);
+
+        ctx.font = "13px 'Share Tech Mono', monospace";
+        ctx.fillStyle = isDarkBg ? "#f43f5e" : "#e11d48";
+        ctx.fillText(`DATE: ${customDate} • SHOT 04/04`, centerX, footerY + 80);
+
+        ctx.font = "20px sans-serif";
+        ctx.fillText("🐾 (˶ᵔ ᵕ ᵔ˶) 🐾", centerX, footerY + 115);
+      } else if (template === "search-ui") {
+        // Cute Browser Footer
+        ctx.textAlign = "center";
+        ctx.textBaseline = "alphabetic";
+        ctx.fillStyle = "#334155";
+        ctx.font = "700 22px 'Space Grotesk', sans-serif";
+        ctx.fillText(`★ ${customTitle.toUpperCase()} ★`, centerX, footerY + 52);
+
+        ctx.font = "13px 'Share Tech Mono', monospace";
+        ctx.fillStyle = "#64748b";
+        ctx.fillText(`URL: /archive/${customDate} // KEEP SAFE`, centerX, footerY + 84);
+      } else if (template === "digicam") {
+        // Digicam 2000s Footer
+        ctx.textAlign = "center";
+        ctx.textBaseline = "alphabetic";
         ctx.fillStyle = "#f1f5f9";
         ctx.font = "700 24px 'Space Grotesk', sans-serif";
         ctx.fillText(customTitle.toUpperCase(), centerX, footerY + 50);
@@ -201,55 +366,31 @@ export default function PhotoEditor({ photos, socket, onBack }) {
         ctx.font = "11px 'Share Tech Mono', monospace";
         ctx.fillStyle = "#64748b";
         ctx.fillText("TWINCAM DIGITAL KEEPSAKE • ZERO SERVER STORAGE", centerX, footerY + 108);
-      } else if (template === "minimal") {
-        // Minimalist Seoul Studio Barcode
+      } else {
+        // Minimal Studio Barcode
         ctx.textAlign = "center";
-        ctx.fillStyle = "#ffffff";
+        ctx.textBaseline = "alphabetic";
+        ctx.fillStyle = isDarkBg ? "#ffffff" : "#09090b";
         ctx.font = "800 22px 'Space Grotesk', sans-serif";
         ctx.fillText(customTitle.toUpperCase(), centerX, footerY + 45);
 
-        // Faux Barcode
         const barY = footerY + 68;
         const barWidth = 180;
         const startBarX = centerX - barWidth / 2;
-        ctx.fillStyle = "#ffffff";
+        ctx.fillStyle = isDarkBg ? "#ffffff" : "#09090b";
         for (let i = 0; i < 34; i++) {
-          const w = (i % 3 === 0 ? 3 : i % 2 === 0 ? 1 : 2);
+          const w = i % 3 === 0 ? 3 : i % 2 === 0 ? 1 : 2;
           ctx.fillRect(startBarX + i * 5.2, barY, w, 24);
         }
 
         ctx.font = "12px monospace";
-        ctx.fillStyle = "#94a3b8";
+        ctx.fillStyle = "#64748b";
         ctx.fillText(`NO. ${Math.abs(customTitle.length * 94821).toString().slice(0, 8)} • ${customDate}`, centerX, footerY + 112);
-      } else if (template === "cyber") {
-        // Y2K Cyber Glow
-        ctx.textAlign = "center";
-        ctx.fillStyle = "#f43f5e";
-        ctx.font = "900 24px 'Space Grotesk', sans-serif";
-        ctx.fillText(`★ ${customTitle.toUpperCase()} ★`, centerX, footerY + 48);
-
-        ctx.font = "13px 'Share Tech Mono', monospace";
-        ctx.fillStyle = "#06b6d4";
-        ctx.fillText(`DIGITAL KEEPSAKE ARCHIVE // ${customDate}`, centerX, footerY + 80);
-
-        ctx.fillStyle = "#a855f7";
-        ctx.font = "11px 'Share Tech Mono', monospace";
-        ctx.fillText("CYBER DUAL-LENS PHOTOBOOTH SYSTEM", centerX, footerY + 106);
-      } else {
-        // Vintage Film Reel
-        ctx.textAlign = "center";
-        ctx.fillStyle = "#e2e8f0";
-        ctx.font = "700 22px 'Space Grotesk', sans-serif";
-        ctx.fillText(customTitle.toUpperCase(), centerX, footerY + 48);
-
-        ctx.font = "13px 'Share Tech Mono', monospace";
-        ctx.fillStyle = "#f59e0b";
-        ctx.fillText(`35MM ISO 400 • ${customDate} • EXP. 04`, centerX, footerY + 82);
       }
 
-      // Render draggable stickers
+      // 4. Render Draggable Stickers
       placedStickers.forEach(({ sticker, x, y }) => {
-        ctx.font = "40px sans-serif";
+        ctx.font = "42px sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(sticker, x * canvas.width, y * canvas.height);
@@ -261,7 +402,7 @@ export default function PhotoEditor({ photos, socket, onBack }) {
     return () => {
       active = false;
     };
-  }, [photos, filter, template, customTitle, customDate, placedStickers]);
+  }, [photos, filter, template, customColor, customTitle, customDate, placedStickers]);
 
   useEffect(() => {
     const onRemoteFilter = (nextFilter) => {
@@ -282,7 +423,7 @@ export default function PhotoEditor({ photos, socket, onBack }) {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const link = document.createElement("a");
-    link.download = `twincam-${template}-${Date.now()}.png`;
+    link.download = `photostrip-${template}-${Date.now()}.png`;
     link.href = canvas.toDataURL("image/png", 1.0);
     link.click();
   };
@@ -303,8 +444,8 @@ export default function PhotoEditor({ photos, socket, onBack }) {
         index === dragging
           ? {
               ...item,
-              x: Math.max(0.05, Math.min(0.95, (event.clientX - bounds.left) / bounds.width)),
-              y: Math.max(0.05, Math.min(0.95, (event.clientY - bounds.top) / bounds.height))
+              x: Math.max(0.04, Math.min(0.96, (event.clientX - bounds.left) / bounds.width)),
+              y: Math.max(0.04, Math.min(0.96, (event.clientY - bounds.top) / bounds.height))
             }
           : item
       )
@@ -334,10 +475,70 @@ export default function PhotoEditor({ photos, socket, onBack }) {
       <div className="editor-grid">
         {/* Left Tools Sidebar */}
         <aside className="editor-sidebar">
-          {/* Tool 1: Filter */}
+          {/* Tool 1: Template Pilihan Lucu & Unik */}
           <div>
             <div className="tool-section-title">
-              <span>01 // DIGITAL FILTER</span>
+              <span>01 // TEMPLATE STRIP</span>
+              <Sparkles size={13} className="text-digi-pink" />
+            </div>
+            <div className="grid grid-cols-1 gap-2">
+              {templates.map(({ id, label, desc }) => (
+                <button
+                  key={id}
+                  className={`p-2.5 rounded-lg border text-left flex flex-col transition-all ${
+                    template === id
+                      ? "border-digi-pink bg-pink-500/10 text-white"
+                      : "border-digi-border bg-digi-card text-slate-300 hover:border-slate-600"
+                  }`}
+                  onClick={() => setTemplate(id)}
+                >
+                  <span className="font-semibold text-xs flex items-center justify-between">
+                    {label}
+                    {template === id && <Check size={13} className="text-digi-pink" />}
+                  </span>
+                  <span className="text-[10px] text-slate-400 mt-0.5">{desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Tool 2: Color Palette Picker */}
+          <div>
+            <div className="tool-section-title">
+              <span>02 // WARNA FRAME</span>
+              <Palette size={13} />
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              {colorPalettes.map(({ id, label, color }) => (
+                <button
+                  key={id}
+                  className={`h-9 rounded-md border flex items-center justify-center text-[10px] font-mono transition-all ${
+                    customColor === id
+                      ? "ring-2 ring-digi-pink border-white text-white font-bold"
+                      : "border-digi-border text-slate-300 hover:border-slate-500"
+                  }`}
+                  style={{ backgroundColor: color === "transparent" ? "#242938" : color }}
+                  onClick={() => setCustomColor(id)}
+                  title={label}
+                >
+                  <span
+                    className={
+                      color === "#ffffff" || color === "#ffe4e6" || color === "#fef08a" || color === "#dcfce7" || color === "#f3e8ff" || color === "#e0f2fe"
+                        ? "text-slate-900"
+                        : "text-white"
+                    }
+                  >
+                    {label}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Tool 3: Filter */}
+          <div>
+            <div className="tool-section-title">
+              <span>03 // FILTER FOTO</span>
               <Wand2 size={13} />
             </div>
             <div className="chip-grid">
@@ -354,60 +555,42 @@ export default function PhotoEditor({ photos, socket, onBack }) {
             </div>
           </div>
 
-          {/* Tool 2: Frame Template */}
+          {/* Tool 4: Custom Text & Date */}
           <div>
             <div className="tool-section-title">
-              <span>02 // DIGICAM FRAME</span>
-            </div>
-            <div className="chip-grid">
-              {templates.map(([id, label]) => (
-                <button
-                  key={id}
-                  className={`chip-btn ${template === id ? "active" : ""}`}
-                  onClick={() => setTemplate(id)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Tool 3: Custom Text */}
-          <div>
-            <div className="tool-section-title">
-              <span>03 // CUSTOM CAPTION</span>
+              <span>04 // CAPTION & NAMA</span>
               <Type size={13} />
             </div>
             <div className="space-y-2">
               <div>
-                <label className="text-[10px] text-slate-400 font-mono mb-1 block">JUDUL STRIP</label>
+                <label className="text-[10px] text-slate-400 font-mono mb-1 block">JUDUL STRIP / NAMA COUPLE</label>
                 <input
                   type="text"
-                  maxLength={28}
+                  maxLength={30}
                   className="text-input-field"
                   value={customTitle}
                   onChange={(e) => setCustomTitle(e.target.value)}
-                  placeholder="Misal: Dytra & Partner ♡"
+                  placeholder="Misal: Dytra & Sarah ♡"
                 />
               </div>
               <div>
                 <label className="text-[10px] text-slate-400 font-mono mb-1 block">TANGGAL / PESAN</label>
                 <input
                   type="text"
-                  maxLength={20}
+                  maxLength={24}
                   className="text-input-field"
                   value={customDate}
                   onChange={(e) => setCustomDate(e.target.value)}
-                  placeholder="'26 10 04"
+                  placeholder="04.10.2026"
                 />
               </div>
             </div>
           </div>
 
-          {/* Tool 4: Stickers */}
+          {/* Tool 5: Cute Stickers */}
           <div>
             <div className="tool-section-title">
-              <span>04 // STICKERS</span>
+              <span>05 // STIKER GEMES</span>
               {placedStickers.length > 0 && (
                 <button
                   onClick={removeLastSticker}
@@ -417,7 +600,7 @@ export default function PhotoEditor({ photos, socket, onBack }) {
                 </button>
               )}
             </div>
-            <div className="sticker-tray">
+            <div className="sticker-tray max-h-36 overflow-y-auto p-1 bg-digi-card/60 rounded-lg border border-digi-border">
               {stickers.map((sticker, idx) => (
                 <button
                   key={`${sticker}-${idx}`}
@@ -430,7 +613,7 @@ export default function PhotoEditor({ photos, socket, onBack }) {
               ))}
             </div>
             <small className="text-[10px] text-slate-400 mt-2 block">
-              💡 Klik stiker untuk memasang, lalu geser stiker langsung pada preview.
+              💡 Klik stiker di atas, lalu <b>seret/geser langsung</b> di atas gambar preview untuk mengatur posisinya!
             </small>
           </div>
 
@@ -439,8 +622,9 @@ export default function PhotoEditor({ photos, socket, onBack }) {
             className="btn-secondary text-xs w-full justify-center text-slate-400"
             onClick={() => {
               setFilter("normal");
-              setTemplate("digicam");
-              setCustomTitle("TWINCAM ARCHIVE");
+              setTemplate("coquette");
+              setCustomColor("auto");
+              setCustomTitle("OUR SWEET MOMENTS");
               setPlacedStickers([]);
               socket?.emit("sync-filter", "normal");
             }}
@@ -452,7 +636,9 @@ export default function PhotoEditor({ photos, socket, onBack }) {
         {/* Right Preview Panel */}
         <section className="canvas-container">
           <div className="w-full flex items-center justify-between mb-3 text-xs font-mono text-slate-400">
-            <span>PREVIEW // HI-RES RENDER</span>
+            <span className="flex items-center gap-1.5">
+              <span className="rec-dot" style={{ width: 6, height: 6 }} /> PREVIEW // HI-RES RENDER
+            </span>
             <span className="text-digi-amber">DRAG STICKER TO REPOSITION</span>
           </div>
 
@@ -481,12 +667,12 @@ export default function PhotoEditor({ photos, socket, onBack }) {
               disabled={!rendered || photos.length === 0}
               onClick={download}
             >
-              <Download size={18} /> Download High-Res Photostrip (PNG)
+              <Download size={18} /> Download Strip Lucu (PNG Kualitas Tinggi)
             </button>
           </div>
 
           <p className="text-center text-xs text-slate-500 font-mono mt-3">
-            🔒 100% Client-Side Rendered • Foto langsung diunduh ke browsermu tanpa watermark
+            🔒 100% Client-Side Rendered • Siap cetak / upload ke Instagram Story tanpa watermark
           </p>
         </section>
       </div>

@@ -1,27 +1,23 @@
 # Dependencies
-node_modules/
-client/node_modules/
-server/node_modules/
+node_modules
+**/node_modules/
 
 # Production builds
-dist/
-client/dist/
+dist
+**/dist/
 
-# Environment variables (Jaga rahasia & konfigurasi lokal)
+# Environment files
 .env
+*.env
 .env.local
 .env.*.local
-client/.env
-server/.env
 !*.env.example
 
 # Logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 *.log
+npm-debug.log*
 
-# Editor & OS files
+# OS & Editor
 .DS_Store
 Thumbs.db
 .vscode/

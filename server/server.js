@@ -31,17 +31,23 @@ app.use((req, res, next) => {
 const peerServer = ExpressPeerServer(httpServer, {
   proxied: true,
   allow_discovery: false,
-  createWebSocketServer: ({ path, server }) => {
+  createWebSocketServer: ({ server }) => {
     const peerSockets = new WebSocketServer({ noServer: true });
     server.on("upgrade", (request, socket, head) => {
       const requestPath = new URL(request.url || "/", "http://localhost").pathname;
-      if (requestPath !== path) return;
+      if (!requestPath.startsWith("/peer")) return;
       peerSockets.handleUpgrade(request, socket, head, (connection) => {
         peerSockets.emit("connection", connection, request);
       });
     });
     return peerSockets;
   }
+});
+peerServer.on("connection", (client) => {
+  console.log(`[PeerServer] Client connected: ${client.getId()}`);
+});
+peerServer.on("disconnect", (client) => {
+  console.log(`[PeerServer] Client disconnected: ${client.getId()}`);
 });
 app.use("/peer", peerServer);
 app.get("/", (_req, res) => res.json({ status: "ok", service: "Virtual Photobooth LDR" }));
@@ -92,6 +98,12 @@ io.on("connection", (socket) => {
     if (!member) return;
     member.peerId = peerId;
     socket.to(code).emit("peer-available", { role: member.role, peerId });
+    for (const other of room.members.values()) {
+      if (other.socketId !== socket.id && other.peerId) {
+        socket.emit("peer-available", { role: other.role, peerId: other.peerId });
+      }
+    }
+    io.to(code).emit("room-members", roomSnapshot(room));
   });
 
   socket.on("start-timer", (layout, ack) => {

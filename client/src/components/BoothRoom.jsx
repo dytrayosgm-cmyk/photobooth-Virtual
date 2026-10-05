@@ -20,7 +20,7 @@ function VideoTile({ stream, name, muted, status, videoRef, channel, isLocal }) 
 
       {/* Stream Video or Waiting Placeholder */}
       {stream ? (
-        <video ref={videoRef} autoPlay playsInline muted />
+        <video ref={videoRef} autoPlay playsInline muted={isLocal} />
       ) : (
         <div className="video-tile-empty">
           <Camera size={36} />

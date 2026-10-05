@@ -7,7 +7,7 @@ import { WebSocketServer } from "ws";
 
 const app = express();
 const httpServer = createServer(app);
-const port = Number(process.env.PORT) || 3001;
+const port = Number(process.env.PORT) || 8080;
 const allowedOrigins = (process.env.CLIENT_ORIGIN || "*")
   .split(",")
   .map((origin) => origin.trim());

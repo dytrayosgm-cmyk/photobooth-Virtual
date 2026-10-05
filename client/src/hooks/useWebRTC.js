@@ -11,24 +11,10 @@ const PeerConstructor =
 
 const socketUrl = import.meta.env.VITE_SOCKET_URL || "http://localhost:3001";
 
-let peerHost = "localhost";
-let peerPort = 3001;
-try {
-  if (socketUrl.startsWith("http")) {
-    const parsed = new URL(socketUrl);
-    peerHost = parsed.hostname;
-    peerPort = parsed.port ? Number(parsed.port) : (parsed.protocol === "https:" ? 443 : 80);
-  }
-} catch {
-  peerHost = "localhost";
-}
-
-if (import.meta.env.VITE_PEER_HOST) peerHost = import.meta.env.VITE_PEER_HOST;
-if (import.meta.env.VITE_PEER_PORT) peerPort = Number(import.meta.env.VITE_PEER_PORT);
-
-const peerSecure = import.meta.env.VITE_PEER_SECURE
-  ? import.meta.env.VITE_PEER_SECURE === "true"
-  : socketUrl.startsWith("https://") || peerPort === 443;
+const customPeerHost = import.meta.env.VITE_PEER_HOST;
+const customPeerPort = import.meta.env.VITE_PEER_PORT ? Number(import.meta.env.VITE_PEER_PORT) : undefined;
+const customPeerPath = import.meta.env.VITE_PEER_PATH || "/peer";
+const customPeerSecure = import.meta.env.VITE_PEER_SECURE === "true";
 
 let customIceServers = [
   { urls: "stun:stun.l.google.com:19302" },
@@ -65,12 +51,27 @@ export function useWebRTC() {
   const [connectionState, setConnectionState] = useState("idle");
 
   const localStreamRef = useRef(null);
+  const remoteStreamRef = useRef(null);
   const callRef = useRef(null);
   const peerRef = useRef(null);
   const socketRef = useRef(null);
 
   useEffect(() => {
     let active = true;
+
+    const handleRemoteStream = (remote) => {
+      if (!active || !remote) return;
+      console.log("[WebRTC] Remote stream attached!");
+      remoteStreamRef.current = remote;
+      setRemoteStream(remote);
+    };
+
+    const handleCallClose = () => {
+      console.log("[WebRTC] Call closed");
+      callRef.current = null;
+      remoteStreamRef.current = null;
+      if (active) setRemoteStream(null);
+    };
 
     // 1. Inisialisasi Socket.io langsung saat mount
     let currentSocket = null;
@@ -121,38 +122,41 @@ export function useWebRTC() {
         localStreamRef.current = stream;
         setLocalStream(stream);
 
-        // 3. Inisialisasi PeerJS jika constructor tersedia
+        // 3. Inisialisasi PeerJS
         if (PeerConstructor) {
           try {
-            const currentPeer = new PeerConstructor(undefined, {
-              host: peerHost,
-              port: peerPort,
-              path: "/peer",
-              secure: peerSecure,
+            const peerOptions = {
               config: {
                 iceServers: customIceServers
               }
-            });
+            };
 
+            // Jika ada VITE_PEER_HOST, gunakan server custom. Jika tidak, gunakan PeerJS Cloud resmi (0.peerjs.com)
+            if (customPeerHost) {
+              peerOptions.host = customPeerHost;
+              peerOptions.port = customPeerPort || (customPeerSecure ? 443 : 80);
+              peerOptions.path = customPeerPath;
+              peerOptions.secure = customPeerSecure;
+            }
+
+            console.log("[WebRTC] Initializing PeerJS with options:", peerOptions);
+            const currentPeer = new PeerConstructor(undefined, peerOptions);
             peerRef.current = currentPeer;
 
             currentPeer.on("open", (peerId) => {
+              console.log("[WebRTC] Peer open with ID:", peerId);
               if (currentSocket) currentSocket.emit("peer-ready", peerId);
             });
 
             currentPeer.on("call", (call) => {
               console.log("[WebRTC] Incoming call received from peer");
+              if (callRef.current && callRef.current !== call) {
+                try { callRef.current.close(); } catch {}
+              }
               callRef.current = call;
-              call.answer(stream);
-              call.on("stream", (remote) => {
-                console.log("[WebRTC] Inbound remote stream received!");
-                if (active) setRemoteStream(remote);
-              });
-              call.on("close", () => {
-                console.log("[WebRTC] Inbound call closed");
-                callRef.current = null;
-                if (active) setRemoteStream(null);
-              });
+              call.answer(localStreamRef.current || stream);
+              call.on("stream", handleRemoteStream);
+              call.on("close", handleCallClose);
               call.on("error", (err) => {
                 console.warn("[WebRTC] Inbound call error:", err);
                 callRef.current = null;
@@ -160,37 +164,50 @@ export function useWebRTC() {
             });
 
             currentPeer.on("error", (error) => {
-              console.warn("[WebRTC] PeerJS notice:", error?.message || error);
+              console.warn("[WebRTC] PeerJS notice:", error?.type, error?.message || error);
             });
+
+            const makeCall = (targetPeerId) => {
+              if (!peerRef.current || !targetPeerId) return;
+              const activeStream = localStreamRef.current || stream;
+              if (!activeStream) return;
+              if (callRef.current) {
+                try { callRef.current.close(); } catch {}
+                callRef.current = null;
+              }
+              console.log("[WebRTC] Calling target peer:", targetPeerId);
+              const call = peerRef.current.call(targetPeerId, activeStream);
+              if (!call) return;
+              callRef.current = call;
+              call.on("stream", handleRemoteStream);
+              call.on("close", handleCallClose);
+              call.on("error", (err) => {
+                console.warn("[WebRTC] Outbound call error:", err);
+                callRef.current = null;
+              });
+            };
 
             if (currentSocket) {
               currentSocket.on("peer-available", ({ role, peerId }) => {
                 console.log("[WebRTC] Peer available:", role, peerId);
-                if (!peerRef.current || !peerId || role !== "guest") return;
-                if (callRef.current) {
-                  try { callRef.current.close(); } catch {}
-                  callRef.current = null;
+                if (!peerId) return;
+
+                if (role === "guest") {
+                  // Host calls Guest
+                  setTimeout(() => {
+                    if (!active) return;
+                    makeCall(peerId);
+                  }, 300);
+                } else if (role === "host") {
+                  // Guest waits for Host call. Fallback after 3.5s if not connected:
+                  setTimeout(() => {
+                    if (!active) return;
+                    if (!remoteStreamRef.current && !callRef.current) {
+                      console.log("[WebRTC] Fallback: Host call not received yet, Guest calling Host...");
+                      makeCall(peerId);
+                    }
+                  }, 3500);
                 }
-                setTimeout(() => {
-                  if (!active || !peerRef.current) return;
-                  console.log("[WebRTC] Calling guest peer:", peerId);
-                  const call = peerRef.current.call(peerId, stream);
-                  if (!call) return;
-                  callRef.current = call;
-                  call.on("stream", (remote) => {
-                    console.log("[WebRTC] Outbound remote stream received!");
-                    if (active) setRemoteStream(remote);
-                  });
-                  call.on("close", () => {
-                    console.log("[WebRTC] Outbound call closed");
-                    callRef.current = null;
-                    if (active) setRemoteStream(null);
-                  });
-                  call.on("error", (err) => {
-                    console.warn("[WebRTC] Outbound call error:", err);
-                    callRef.current = null;
-                  });
-                }, 350);
               });
             }
           } catch (peerInitErr) {

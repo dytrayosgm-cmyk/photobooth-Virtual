@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Check, Download, Palette, RotateCcw, Sparkles, Trash2, Type, Wand2 } from "lucide-react";
+import { ArrowLeft, Check, Columns, Download, Palette, RotateCcw, Sparkles, Trash2, Type, Users, Wand2 } from "lucide-react";
 
 const filters = [
   ["normal", "Normal"],
@@ -57,6 +57,7 @@ export default function PhotoEditor({ photos, socket, onBack }) {
     const d = new Date();
     return `'${String(d.getFullYear()).slice(-2)}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
   });
+  const [coupleArrangement, setCoupleArrangement] = useState("side-by-side");
   const [placedStickers, setPlacedStickers] = useState([]);
   const [dragging, setDragging] = useState(null);
   const [rendered, setRendered] = useState(false);
@@ -226,17 +227,31 @@ export default function PhotoEditor({ photos, socket, onBack }) {
         ctx.filter = filterCss[filter] || "none";
 
         if (host && guest) {
-          const panelHeight = photoHeight / 2;
-          drawCover(host, x, y, photoWidth, panelHeight);
-          drawCover(guest, x, y + panelHeight, photoWidth, panelHeight);
+          if (coupleArrangement === "side-by-side") {
+            const halfW = Math.floor(photoWidth / 2) - 2;
+            drawCover(host, x, y, halfW, photoHeight);
+            drawCover(guest, x + halfW + 4, y, halfW, photoHeight);
 
-          ctx.restore();
-          ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(x, y + panelHeight);
-          ctx.lineTo(x + photoWidth, y + panelHeight);
-          ctx.stroke();
+            ctx.restore();
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.45)";
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(x + halfW + 2, y);
+            ctx.lineTo(x + halfW + 2, y + photoHeight);
+            ctx.stroke();
+          } else {
+            const panelHeight = Math.floor(photoHeight / 2) - 2;
+            drawCover(host, x, y, photoWidth, panelHeight);
+            drawCover(guest, x + panelHeight + 4, photoWidth, panelHeight);
+
+            ctx.restore();
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.45)";
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(x, y + panelHeight + 2);
+            ctx.lineTo(x + photoWidth, y + panelHeight + 2);
+            ctx.stroke();
+          }
         } else {
           const single = host || guest;
           if (single) drawCover(single, x, y, photoWidth, photoHeight);
@@ -402,7 +417,7 @@ export default function PhotoEditor({ photos, socket, onBack }) {
     return () => {
       active = false;
     };
-  }, [photos, filter, template, customColor, customTitle, customDate, placedStickers]);
+  }, [photos, filter, template, customColor, customTitle, customDate, placedStickers, coupleArrangement]);
 
   useEffect(() => {
     const onRemoteFilter = (nextFilter) => {
@@ -502,10 +517,38 @@ export default function PhotoEditor({ photos, socket, onBack }) {
             </div>
           </div>
 
-          {/* Tool 2: Color Palette Picker */}
+          {/* Tool 2: Posisi Berdua (Couple Arrangement) */}
           <div>
             <div className="tool-section-title">
-              <span>02 // WARNA FRAME</span>
+              <span>02 // TATA LETAK BERDUA</span>
+              <Columns size={13} />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                className={`chip-btn justify-center h-10 text-xs font-mono transition-all ${
+                  coupleArrangement === "side-by-side" ? "active ring-1 ring-digi-pink text-white font-bold" : ""
+                }`}
+                onClick={() => setCoupleArrangement("side-by-side")}
+                title="Host dan Pasangan tampil berdampingan (kiri dan kanan)"
+              >
+                👥 Berdampingan
+              </button>
+              <button
+                className={`chip-btn justify-center h-10 text-xs font-mono transition-all ${
+                  coupleArrangement === "stacked" ? "active ring-1 ring-digi-pink text-white font-bold" : ""
+                }`}
+                onClick={() => setCoupleArrangement("stacked")}
+                title="Host di atas, Pasangan di bawah (split vertikal)"
+              >
+                ↕ Atas - Bawah
+              </button>
+            </div>
+          </div>
+
+          {/* Tool 3: Color Palette Picker */}
+          <div>
+            <div className="tool-section-title">
+              <span>03 // WARNA FRAME</span>
               <Palette size={13} />
             </div>
             <div className="grid grid-cols-4 gap-2">
@@ -535,10 +578,10 @@ export default function PhotoEditor({ photos, socket, onBack }) {
             </div>
           </div>
 
-          {/* Tool 3: Filter */}
+          {/* Tool 4: Filter */}
           <div>
             <div className="tool-section-title">
-              <span>03 // FILTER FOTO</span>
+              <span>04 // FILTER FOTO</span>
               <Wand2 size={13} />
             </div>
             <div className="chip-grid">
@@ -555,10 +598,10 @@ export default function PhotoEditor({ photos, socket, onBack }) {
             </div>
           </div>
 
-          {/* Tool 4: Custom Text & Date */}
+          {/* Tool 5: Custom Text & Date */}
           <div>
             <div className="tool-section-title">
-              <span>04 // CAPTION & NAMA</span>
+              <span>05 // CAPTION & NAMA</span>
               <Type size={13} />
             </div>
             <div className="space-y-2">
@@ -587,10 +630,10 @@ export default function PhotoEditor({ photos, socket, onBack }) {
             </div>
           </div>
 
-          {/* Tool 5: Cute Stickers */}
+          {/* Tool 6: Cute Stickers */}
           <div>
             <div className="tool-section-title">
-              <span>05 // STIKER GEMES</span>
+              <span>06 // STIKER GEMES</span>
               {placedStickers.length > 0 && (
                 <button
                   onClick={removeLastSticker}

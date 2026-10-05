@@ -41,18 +41,29 @@ export default function App() {
 
   useEffect(() => {
     const addLocal = (event) => {
-      const { round, data, layout: sessionLayout } = event.detail;
+      const { round, role: localRole, localData, remoteData, partnerRole, layout: sessionLayout } = event.detail;
       setPhotos((current) => {
         const next = [...current];
-        next[round] = { ...(next[round] || {}), [role]: data, layout: sessionLayout };
+        const existing = next[round] || {};
+        next[round] = {
+          ...existing,
+          [localRole]: localData || existing[localRole],
+          [partnerRole]: existing[partnerRole] || remoteData,
+          layout: sessionLayout
+        };
         return next;
       });
     };
     const addRemote = (event) => {
-      const { round, data, layout: sessionLayout } = event.detail;
+      const { round, role: senderRole, data, layout: sessionLayout } = event.detail;
       setPhotos((current) => {
         const next = [...current];
-        next[round] = { ...(next[round] || {}), [event.detail.role]: data, layout: sessionLayout };
+        const existing = next[round] || {};
+        next[round] = {
+          ...existing,
+          [senderRole]: data,
+          layout: sessionLayout
+        };
         return next;
       });
     };

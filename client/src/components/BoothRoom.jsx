@@ -4,11 +4,49 @@ import { playBeep, playShutterSound } from "../utils/sound.js";
 
 function VideoTile({ stream, name, muted, status, videoRef, channel, isLocal }) {
   useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.srcObject = stream || null;
-      if (stream) videoRef.current.play().catch(() => {});
+    const videoEl = videoRef.current;
+    if (!videoEl) return;
+
+    if (stream) {
+      videoEl.srcObject = stream;
+
+      const attemptPlay = async () => {
+        try {
+          if (isLocal) {
+            videoEl.muted = true;
+          }
+          await videoEl.play();
+        } catch (err) {
+          console.warn(`[VideoTile ${channel}] Play blocked by autoplay policy, muting for visual playback:`, err);
+          videoEl.muted = true;
+          await videoEl.play().catch(() => {});
+        }
+      };
+
+      videoEl.onloadedmetadata = attemptPlay;
+      attemptPlay();
+    } else {
+      videoEl.srcObject = null;
     }
-  }, [stream, videoRef]);
+  }, [stream, videoRef, isLocal, channel]);
+
+  // Unmute remote video on first interaction so partner audio is heard
+  useEffect(() => {
+    if (isLocal) return;
+    const handleInteraction = () => {
+      const videoEl = videoRef.current;
+      if (videoEl && videoEl.muted && !muted) {
+        videoEl.muted = false;
+        videoEl.play().catch(() => {});
+      }
+    };
+    window.addEventListener("click", handleInteraction, { once: true });
+    window.addEventListener("touchstart", handleInteraction, { once: true });
+    return () => {
+      window.removeEventListener("click", handleInteraction);
+      window.removeEventListener("touchstart", handleInteraction);
+    };
+  }, [isLocal, muted, videoRef]);
 
   return (
     <div className="video-tile">
@@ -20,7 +58,13 @@ function VideoTile({ stream, name, muted, status, videoRef, channel, isLocal }) 
 
       {/* Stream Video or Waiting Placeholder */}
       {stream ? (
-        <video ref={videoRef} autoPlay playsInline muted={isLocal} />
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted={isLocal}
+          webkit-playsinline="true"
+        />
       ) : (
         <div className="video-tile-empty">
           <Camera size={36} />
@@ -106,26 +150,44 @@ export default function BoothRoom({
           setFlashActive(true);
           setTimeout(() => setFlashActive(false), 140);
 
-          const video = localVideo.current;
-          if (!video?.videoWidth) {
+          const captureFrame = (vidElement, mirror = true) => {
+            if (!vidElement || !vidElement.videoWidth) return null;
+            const canvas = document.createElement("canvas");
+            canvas.width = 640;
+            canvas.height = Math.round(640 * (vidElement.videoHeight / vidElement.videoWidth));
+            const context = canvas.getContext("2d");
+            if (mirror) {
+              context.translate(canvas.width, 0);
+              context.scale(-1, 1);
+            }
+            context.drawImage(vidElement, 0, 0, canvas.width, canvas.height);
+            return canvas.toDataURL("image/jpeg", 0.85);
+          };
+
+          const localData = captureFrame(localVideo.current, true);
+          const remoteData = captureFrame(remoteVideo.current, false);
+
+          if (!localData && !remoteData) {
             setError("Kamera belum siap. Mohon coba mulai lagi.");
             socket.emit("finish-session", sessionId);
             return;
           }
 
-          const canvas = document.createElement("canvas");
-          canvas.width = 640;
-          canvas.height = Math.round(640 * (video.videoHeight / video.videoWidth));
-          const context = canvas.getContext("2d");
-          context.translate(canvas.width, 0);
-          context.scale(-1, 1);
-          context.drawImage(video, 0, 0, canvas.width, canvas.height);
+          if (localData) {
+            socket.emit("photo-captured", { sessionId, round, data: localData });
+          }
 
-          const data = canvas.toDataURL("image/jpeg", 0.82);
-          socket.emit("photo-captured", { sessionId, round, data });
           window.dispatchEvent(
             new CustomEvent("photo-captured-local", {
-              detail: { sessionId, round, role, data, layout: sessionLayout }
+              detail: {
+                sessionId,
+                round,
+                role,
+                localData,
+                remoteData,
+                partnerRole: role === "host" ? "guest" : "host",
+                layout: sessionLayout
+              }
             })
           );
         }

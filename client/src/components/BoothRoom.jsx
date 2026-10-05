@@ -1,52 +1,75 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Camera, Check, Copy, Grid, Layers, Mic, MicOff, PhoneOff, Video, VideoOff, Zap } from "lucide-react";
+import { ArrowLeft, Camera, Check, Copy, Grid, Layers, Mic, MicOff, PhoneOff, Video, VideoOff, Volume2, Zap } from "lucide-react";
 import { playBeep, playShutterSound } from "../utils/sound.js";
 
 function VideoTile({ stream, name, muted, status, videoRef, channel, isLocal }) {
+  const audioRef = useRef(null);
+  const [audioBlocked, setAudioBlocked] = useState(false);
+
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
     if (stream) {
       videoEl.srcObject = stream;
+      videoEl.muted = true; // Video element is ALWAYS muted to prevent browser autoplay block
 
-      const attemptPlay = async () => {
-        try {
-          if (isLocal) {
-            videoEl.muted = true;
-          }
-          await videoEl.play();
-        } catch (err) {
-          console.warn(`[VideoTile ${channel}] Play blocked by autoplay policy, muting for visual playback:`, err);
-          videoEl.muted = true;
-          await videoEl.play().catch(() => {});
-        }
+      const playVideo = () => {
+        videoEl.play().catch((err) => {
+          console.warn(`[VideoTile ${channel}] Play error:`, err);
+        });
       };
 
-      videoEl.onloadedmetadata = attemptPlay;
-      attemptPlay();
+      videoEl.onloadedmetadata = playVideo;
+      videoEl.oncanplay = playVideo;
+      playVideo();
+
+      stream.getVideoTracks().forEach((track) => {
+        track.onunmute = playVideo;
+      });
     } else {
       videoEl.srcObject = null;
     }
-  }, [stream, videoRef, isLocal, channel]);
+  }, [stream, videoRef, channel]);
 
-  // Unmute remote video on first interaction so partner audio is heard
+  // Audio stream handling for remote partner
   useEffect(() => {
     if (isLocal) return;
-    const handleInteraction = () => {
-      const videoEl = videoRef.current;
-      if (videoEl && videoEl.muted && !muted) {
-        videoEl.muted = false;
-        videoEl.play().catch(() => {});
+    const audioEl = audioRef.current;
+    if (!audioEl) return;
+
+    if (stream) {
+      audioEl.srcObject = stream;
+      audioEl.muted = Boolean(muted);
+      audioEl.play().then(() => {
+        setAudioBlocked(false);
+      }).catch((err) => {
+        console.warn("[VideoTile Remote Audio] Autoplay blocked, waiting for touch:", err);
+        setAudioBlocked(true);
+      });
+    } else {
+      audioEl.srcObject = null;
+    }
+  }, [stream, isLocal, muted]);
+
+  // Unlock audio on any document touch / click
+  useEffect(() => {
+    if (isLocal) return;
+    const unlockAudio = () => {
+      const audioEl = audioRef.current;
+      if (audioEl && stream && !muted) {
+        audioEl.play().then(() => {
+          setAudioBlocked(false);
+        }).catch(() => {});
       }
     };
-    window.addEventListener("click", handleInteraction, { once: true });
-    window.addEventListener("touchstart", handleInteraction, { once: true });
+    window.addEventListener("click", unlockAudio);
+    window.addEventListener("touchstart", unlockAudio);
     return () => {
-      window.removeEventListener("click", handleInteraction);
-      window.removeEventListener("touchstart", handleInteraction);
+      window.removeEventListener("click", unlockAudio);
+      window.removeEventListener("touchstart", unlockAudio);
     };
-  }, [isLocal, muted, videoRef]);
+  }, [isLocal, stream, muted]);
 
   return (
     <div className="video-tile">
@@ -62,14 +85,39 @@ function VideoTile({ stream, name, muted, status, videoRef, channel, isLocal }) 
           ref={videoRef}
           autoPlay
           playsInline
-          muted={isLocal}
+          muted={true}
           webkit-playsinline="true"
+          style={{ transform: isLocal ? "scaleX(-1)" : "none" }}
         />
       ) : (
         <div className="video-tile-empty">
           <Camera size={36} />
           <span className="font-mono text-xs">{status}</span>
         </div>
+      )}
+
+      {/* Dedicated audio element for remote stream */}
+      {!isLocal && (
+        <audio
+          ref={audioRef}
+          autoPlay
+          playsInline
+        />
+      )}
+
+      {/* Audio blocked notification button if browser prevented audio autoplay */}
+      {!isLocal && audioBlocked && stream && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            audioRef.current?.play().then(() => setAudioBlocked(false)).catch(() => {});
+          }}
+          className="absolute top-10 right-3 z-10 flex items-center gap-1.5 bg-rose-500 hover:bg-rose-600 text-white text-[11px] font-mono font-bold px-2.5 py-1 rounded-full shadow-lg transition-transform active:scale-95 animate-pulse cursor-pointer"
+        >
+          <Volume2 size={13} />
+          <span>KETUK: AKTIFKAN SUARA</span>
+        </button>
       )}
 
       {/* Top HUD info */}
@@ -127,20 +175,29 @@ export default function BoothRoom({
       setCompletedNotice(false);
 
       const begin = async () => {
+        const countdownSeconds = 7;
+        const roundInterval = 8400; // 7000ms countdown + 1400ms flash/breather
+
         for (let round = 0; round < 4; round += 1) {
-          const target = startAt + round * 4200;
+          const target = startAt + round * roundInterval;
           let lastBeepSec = null;
 
           while (Date.now() < target) {
             const remaining = target - Date.now();
-            const sec = remaining <= 3000 ? Math.ceil(remaining / 1000) : null;
-            setCountdown(sec);
+            const sec = remaining <= countdownSeconds * 1000 ? Math.ceil(remaining / 1000) : null;
+            setCountdown(sec && sec > 0 ? sec : null);
 
-            if (sec && sec !== lastBeepSec) {
+            if (sec && sec !== lastBeepSec && sec > 0) {
               lastBeepSec = sec;
-              playBeep(sec === 1 ? 1200 : 800, 0.09);
+              if (sec === 1) {
+                playBeep(1200, 0.12);
+              } else if (sec <= 3) {
+                playBeep(850, 0.08);
+              } else {
+                playBeep(600, 0.05);
+              }
             }
-            await new Promise((resolve) => setTimeout(resolve, Math.min(120, remaining)));
+            await new Promise((resolve) => setTimeout(resolve, Math.min(100, remaining)));
           }
 
           setCountdown(null);
@@ -148,7 +205,7 @@ export default function BoothRoom({
           // Shutter flash & mechanical sound!
           playShutterSound();
           setFlashActive(true);
-          setTimeout(() => setFlashActive(false), 140);
+          setTimeout(() => setFlashActive(false), 160);
 
           const captureFrame = (vidElement, mirror = true) => {
             if (!vidElement || !vidElement.videoWidth) return null;
@@ -161,7 +218,7 @@ export default function BoothRoom({
               context.scale(-1, 1);
             }
             context.drawImage(vidElement, 0, 0, canvas.width, canvas.height);
-            return canvas.toDataURL("image/jpeg", 0.85);
+            return canvas.toDataURL("image/jpeg", 0.82);
           };
 
           const localData = captureFrame(localVideo.current, true);
@@ -192,15 +249,16 @@ export default function BoothRoom({
           );
         }
 
+        // Show completed message and ensure in-flight 4th photo finishes uploading
+        setCompletedNotice(true);
+
         if (role === "host") {
-          setTimeout(() => socket.emit("finish-session", sessionId), 600);
+          setTimeout(() => socket.emit("finish-session", sessionId), 2600);
         }
 
-        // Show completed message and smoothly transition to Editor
-        setCompletedNotice(true);
         setTimeout(() => {
           onEditor();
-        }, 1400);
+        }, 3200);
       };
 
       begin();
@@ -323,7 +381,7 @@ export default function BoothRoom({
         {completedNotice && (
           <div className="countdown-overlay">
             <span className="text-3xl font-display font-bold text-white mb-2">🎉 4 SHOTS COMPLETE!</span>
-            <span className="countdown-label">MEMBUKA STUDIO KEEPSAKE...</span>
+            <span className="countdown-label">MENYIMPAN FOTO KALIAN BERDUA... MEMBUKA STUDIO ✨</span>
           </div>
         )}
       </section>

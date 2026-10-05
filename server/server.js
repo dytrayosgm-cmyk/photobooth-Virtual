@@ -118,8 +118,9 @@ io.on("connection", (socket) => {
     if (!["strip", "grid"].includes(layout)) return ack?.({ error: "Layout tidak valid." });
 
     const sessionId = `${Date.now()}-${randomInt(1_000_000)}`;
-    const startAt = Date.now() + 3000;
+    const startAt = Date.now() + 7000;
     room.session = { id: sessionId, startAt, layout };
+    room.lastSessionId = sessionId;
     io.to(code).emit("session-start", { sessionId, startAt, layout });
     ack?.({ ok: true, sessionId });
   });
@@ -128,25 +129,32 @@ io.on("connection", (socket) => {
     const code = socket.data.roomCode;
     const room = code && rooms.get(code);
     const member = room?.members.get(socket.id);
-    if (!member || !room.session || room.session.id !== sessionId) return;
+    if (!member) return;
+    const isCurrentSession = room.session && room.session.id === sessionId;
+    const isRecentSession = room.lastSessionId === sessionId;
+    if (!isCurrentSession && !isRecentSession) return;
     if (!Number.isInteger(round) || round < 0 || round > 3) return;
-    if (typeof data !== "string" || !data.startsWith("data:image/jpeg;base64,") || data.length > 450_000) {
+    if (typeof data !== "string" || !data.startsWith("data:image/jpeg;base64,") || data.length > 550_000) {
       return socket.emit("session-error", "Frame foto tidak valid atau terlalu besar.");
     }
+    const sessionLayout = room.session?.layout || "strip";
     socket.to(code).emit("photo-received", {
       sessionId,
       round,
       role: member.role,
       data,
-      layout: room.session.layout
+      layout: sessionLayout
     });
   });
 
   socket.on("finish-session", (sessionId) => {
     const code = socket.data.roomCode;
     const room = code && rooms.get(code);
-    if (!room || room.session?.id !== sessionId) return;
-    room.session = null;
+    if (!room) return;
+    if (room.session?.id === sessionId) {
+      room.lastSessionId = sessionId;
+      room.session = null;
+    }
     io.to(code).emit("session-finished", { sessionId });
   });
 

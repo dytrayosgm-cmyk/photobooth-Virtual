@@ -40,6 +40,27 @@ export default function App() {
   }, [socket, role]);
 
   useEffect(() => {
+    if (!socket) return undefined;
+    const onPhotoReceived = ({ round, role: senderRole, data, layout: sessionLayout }) => {
+      console.log(`[App] Persistent socket photo received for round ${round} from ${senderRole}`);
+      setPhotos((current) => {
+        const next = [...current];
+        const existing = next[round] || {};
+        next[round] = {
+          ...existing,
+          [senderRole]: data,
+          layout: sessionLayout || existing.layout || "strip"
+        };
+        return next;
+      });
+    };
+    socket.on("photo-received", onPhotoReceived);
+    return () => {
+      socket.off("photo-received", onPhotoReceived);
+    };
+  }, [socket]);
+
+  useEffect(() => {
     const addLocal = (event) => {
       const { round, role: localRole, localData, remoteData, partnerRole, layout: sessionLayout } = event.detail;
       setPhotos((current) => {

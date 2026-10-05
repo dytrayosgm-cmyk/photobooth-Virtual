@@ -192,9 +192,12 @@ export default function PhotoEditor({ photos, socket, onBack }) {
 
     Promise.all(
       photos.map(async (photo, index) => {
+        // Ensure both partners are always displayed in dual sessions even if one shot packet was delayed
+        const fallbackGuest = photo?.guest || photos.find((p) => p?.guest)?.guest;
+        const fallbackHost = photo?.host || photos.find((p) => p?.host)?.host;
         const [host, guest] = await Promise.all([
-          loadImage(photo?.host),
-          loadImage(photo?.guest)
+          loadImage(fallbackHost),
+          loadImage(fallbackGuest)
         ]);
         if (!active) return;
 

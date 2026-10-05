@@ -19,21 +19,19 @@ const customPeerSecure = import.meta.env.VITE_PEER_SECURE === "true";
 let customIceServers = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
+  { urls: "stun:stun2.l.google.com:19302" },
+  { urls: "stun:stun3.l.google.com:19302" },
+  { urls: "stun:stun4.l.google.com:19302" },
   { urls: "stun:stun.cloudflare.com:3478" },
   {
-    urls: "turn:openrelay.metered.ca:80",
-    username: "openrelay",
-    credential: "openrelay"
-  },
-  {
-    urls: "turn:openrelay.metered.ca:443",
-    username: "openrelay",
-    credential: "openrelay"
-  },
-  {
-    urls: "turn:openrelay.metered.ca:443?transport=tcp",
-    username: "openrelay",
-    credential: "openrelay"
+    urls: [
+      "turn:openrelay.metered.ca:80",
+      "turn:openrelay.metered.ca:80?transport=tcp",
+      "turn:openrelay.metered.ca:443",
+      "turns:openrelay.metered.ca:443?transport=tcp"
+    ],
+    username: "openrelayproject",
+    credential: "openrelayproject"
   }
 ];
 try {
@@ -61,7 +59,22 @@ export function useWebRTC() {
 
     const handleRemoteStream = (remote) => {
       if (!active || !remote) return;
-      console.log("[WebRTC] Remote stream attached!");
+      console.log("[WebRTC] Remote stream attached! Tracks:", remote.getTracks().map((t) => `${t.kind}:${t.readyState}:${t.enabled}`));
+      remote.getTracks().forEach((track) => {
+        track.enabled = true;
+        track.onunmute = () => {
+          console.log(`[WebRTC] Remote track unmuted: ${track.kind}`);
+          if (active) {
+            setRemoteStream(new MediaStream(remote.getTracks()));
+          }
+        };
+      });
+      remote.onaddtrack = () => {
+        console.log("[WebRTC] Track added to remote stream");
+        if (active) {
+          setRemoteStream(new MediaStream(remote.getTracks()));
+        }
+      };
       remoteStreamRef.current = remote;
       setRemoteStream(remote);
     };
@@ -109,10 +122,22 @@ export function useWebRTC() {
       }
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user" },
-          audio: true
-        });
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            }
+          });
+        } catch {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "user" },
+            audio: true
+          });
+        }
 
         if (!active) {
           stream.getTracks().forEach((track) => track.stop());
@@ -198,6 +223,14 @@ export function useWebRTC() {
                     if (!active) return;
                     makeCall(peerId);
                   }, 300);
+                  // Retry calling if remote stream not established after 3.5s
+                  setTimeout(() => {
+                    if (!active) return;
+                    if (!remoteStreamRef.current) {
+                      console.log("[WebRTC] Host retrying call to Guest...");
+                      makeCall(peerId);
+                    }
+                  }, 3500);
                 } else if (role === "host") {
                   // Guest waits for Host call. Fallback after 3.5s if not connected:
                   setTimeout(() => {
